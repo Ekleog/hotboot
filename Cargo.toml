@@ -20,3 +20,8 @@ categories = [ "cryptography" ]
 [dependencies]
 
 openssl = "0.9.7"
+
+
+[badges]
+
+travis-ci = { repository = "Ekleog/hotboot" }
