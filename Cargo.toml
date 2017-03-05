@@ -1,7 +1,22 @@
 [package]
+
 name = "hotboot"
 version = "0.1.0"
 authors = ["Léo Gaspard <leo@gaspard.io>"]
+license = "GPL-3.0"
+
+description = """
+Secure private data with a weak secret, using as a protection access control of
+the system and defense especially designed against cold-boot attacks."""
+
+documentation = "https://docs.rs/hotboot"
+repository = "https://github.com/Ekleog/hotboot"
+
+readme = "README.md"
+keywords = [ "crypto", "cold boot" ]
+categories = [ "cryptography" ]
+
 
 [dependencies]
+
 openssl = "0.9.7"
