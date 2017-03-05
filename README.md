@@ -72,4 +72,4 @@ History
 License
 -------
 
-`toboggan` is licensed under GPLv3, please see the file called `LICENSE.md`.
+`hotboot` is licensed under GPLv3, please see the file called `LICENSE.md`.
