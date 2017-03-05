@@ -117,8 +117,11 @@ fn derive_key(secret: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
  *
  * Please note both data and secret will be erased at the end of this function, so that it is hard
  * to forget cleaning them up.
+ *
+ * `iters` is the number of iterations to run, the number of bits that will be required uncorrupted
+ * to recover the data with the secret is then approximately `384 * iters`
  */
-pub fn hide(data: Vec<u8>, secret: Vec<u8>) -> HiddenData {
+pub fn hide(data: Vec<u8>, secret: Vec<u8>, iters: usize) -> HiddenData {
     let mut blocks = Vec::new();
 
     // Encrypt data with random key
@@ -127,7 +130,7 @@ pub fn hide(data: Vec<u8>, secret: Vec<u8>) -> HiddenData {
 
     // Encrypt key with random key a number of times
     let mut oldkey = key;
-    for _ in 0..100000 { // TODO: make this parameterized
+    for _ in 0..iters {
         let (key, block) = encrypt_and_destroy(oldkey);
         blocks.push(block);
         oldkey = key;
@@ -173,6 +176,6 @@ mod tests {
         let secret2 = secret1.clone();
         let data1 = vec![4, 5, 6, 6];
         let data2 = data1.clone();
-        assert_eq!(*recover(hide(data1, secret1), secret2), *data2);
+        assert_eq!(*recover(hide(data1, secret1, 100000), secret2), *data2);
     }
 }
