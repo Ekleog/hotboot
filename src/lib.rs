@@ -89,6 +89,7 @@
  * History
  * -------
  *
+ *  * 2017-03-05: 0.1.0 released
  *  * 2017-03-04: Project launch
  *
  *
