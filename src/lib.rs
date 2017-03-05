@@ -17,10 +17,9 @@
 
 extern crate openssl;
 
+use openssl::error::ErrorStack;
 use openssl::hash::MessageDigest;
 use openssl::symm::Cipher;
-
-// TODO: Remove all unwrap's
 
 const SALT_SIZE: usize = 32;
 const PBKDF_ITERS: usize = 10000;
@@ -40,6 +39,14 @@ struct EncryptedBlock {
     data: Vec<u8>,
 }
 
+#[derive(Debug)]
+pub enum Error {
+    EncryptionError(ErrorStack),
+    DecryptionError(ErrorStack),
+    RandomBytesError(ErrorStack),
+    KeyDerivationError(ErrorStack),
+}
+
 /**
  * Cleans up an array
  */
@@ -55,19 +62,21 @@ fn cleanup(mut data: Vec<u8>) {
  *
  * data and key will be erased at the end of the function
  */
-fn encrypt_and_destroy_key(data: Vec<u8>, key: Vec<u8>) -> EncryptedBlock {
+fn encrypt_and_destroy_key(data: Vec<u8>, key: Vec<u8>) -> Result<EncryptedBlock, Error> {
     let mut iv = [0; IV_SIZE];
-    openssl::rand::rand_bytes(&mut iv).unwrap();
+    openssl::rand::rand_bytes(&mut iv).map_err(Error::RandomBytesError)?;
 
     // Encrypt
-    let enc = openssl::symm::encrypt(/* CIPHER */ Cipher::aes_256_ctr(), &key, Some(&iv), &data);
+    let enc =
+        openssl::symm::encrypt(/* CIPHER */ Cipher::aes_256_ctr(), &key, Some(&iv), &data)
+        .map_err(Error::EncryptionError)?;
 
     // Clean up
     cleanup(data);
     cleanup(key);
 
     // Return
-    EncryptedBlock { iv: iv, data: enc.unwrap() }
+    Ok(EncryptedBlock { iv: iv, data: enc })
 }
 
 /**
@@ -75,14 +84,14 @@ fn encrypt_and_destroy_key(data: Vec<u8>, key: Vec<u8>) -> EncryptedBlock {
  *
  * data will be erased at the end of the function
  */
-fn encrypt_and_destroy(data: Vec<u8>) -> (Vec<u8>, EncryptedBlock) {
+fn encrypt_and_destroy(data: Vec<u8>) -> Result<(Vec<u8>, EncryptedBlock), Error> {
     // Generate the parameters
     let mut key = vec![0; KEY_SIZE];
-    openssl::rand::rand_bytes(&mut key).unwrap();
+    openssl::rand::rand_bytes(&mut key).map_err(Error::RandomBytesError)?;
     let keyret = key.clone();
 
     // Return
-    (keyret, encrypt_and_destroy_key(data, key))
+    Ok((keyret, encrypt_and_destroy_key(data, key)?))
 }
 
 /**
@@ -90,11 +99,13 @@ fn encrypt_and_destroy(data: Vec<u8>) -> (Vec<u8>, EncryptedBlock) {
  *
  * The key will be erased at the end of the function
  */
-fn decrypt(data: EncryptedBlock, key: Vec<u8>) -> Vec<u8> {
-    let res = openssl::symm::decrypt(/* CIPHER */ Cipher::aes_256_ctr(), &key, Some(&data.iv), &data.data);
+fn decrypt(data: EncryptedBlock, key: Vec<u8>) -> Result<Vec<u8>, Error> {
+    let res =
+        openssl::symm::decrypt(/* CIPHER */ Cipher::aes_256_ctr(), &key, Some(&data.iv), &data.data)
+        .map_err(Error::DecryptionError)?;
     cleanup(key);
     cleanup(data.data);
-    res.unwrap()
+    Ok(res)
 }
 
 /**
@@ -102,16 +113,17 @@ fn decrypt(data: EncryptedBlock, key: Vec<u8>) -> Vec<u8> {
  *
  * The secret will be erased at the end of the function
  */
-fn derive_key_salt(secret: Vec<u8>, salt: Vec<u8>) -> Vec<u8> {
+fn derive_key_salt(secret: Vec<u8>, salt: Vec<u8>) -> Result<Vec<u8>, Error> {
     // Generate key
     let mut key = vec![0; KEY_SIZE];
-    openssl::pkcs5::pbkdf2_hmac(&secret, &salt, PBKDF_ITERS, /* HASH */ MessageDigest::sha256(), &mut key).unwrap();
+    openssl::pkcs5::pbkdf2_hmac(&secret, &salt, PBKDF_ITERS, /* HASH */ MessageDigest::sha256(), &mut key)
+        .map_err(Error::KeyDerivationError)?;
 
     // Clean up
     cleanup(secret);
 
     // Return
-    key
+    Ok(key)
 }
 
 /**
@@ -119,14 +131,14 @@ fn derive_key_salt(secret: Vec<u8>, salt: Vec<u8>) -> Vec<u8> {
  *
  * The secret will be erased at the end of the function
  */
-fn derive_key(secret: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+fn derive_key(secret: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>), Error> {
     // Generate parameters
     let mut salt = vec![0; SALT_SIZE];
-    openssl::rand::rand_bytes(&mut salt).unwrap();
+    openssl::rand::rand_bytes(&mut salt).map_err(Error::RandomBytesError)?;
     let saltret = salt.clone();
 
     // Return
-    (saltret, derive_key_salt(secret, salt))
+    Ok((saltret, derive_key_salt(secret, salt)?))
 }
 
 /**
@@ -138,30 +150,30 @@ fn derive_key(secret: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
  * `iters` is the number of iterations to run, the number of bits that will be required uncorrupted
  * to recover the data with the secret is then approximately `384 * iters`
  */
-pub fn hide(data: Vec<u8>, secret: Vec<u8>, iters: usize) -> HiddenData {
+pub fn hide(data: Vec<u8>, secret: Vec<u8>, iters: usize) -> Result<HiddenData, Error> {
     let mut blocks = Vec::new();
 
     // Encrypt data with random key
-    let (key, block) = encrypt_and_destroy(data);
+    let (key, block) = encrypt_and_destroy(data)?;
     blocks.push(block);
 
     // Encrypt key with random key a number of times
     let mut oldkey = key;
     for _ in 0..iters {
-        let (key, block) = encrypt_and_destroy(oldkey);
+        let (key, block) = encrypt_and_destroy(oldkey)?;
         blocks.push(block);
         oldkey = key;
     }
 
     // Encrypt last random key with the secret
-    let (salt, key) = derive_key(secret);
-    blocks.push(encrypt_and_destroy_key(oldkey, key));
+    let (salt, key) = derive_key(secret)?;
+    blocks.push(encrypt_and_destroy_key(oldkey, key)?);
 
     // Return
-    HiddenData {
+    Ok(HiddenData {
         salt: salt,
         blocks: blocks,
-    }
+    })
 }
 
 /**
@@ -170,16 +182,16 @@ pub fn hide(data: Vec<u8>, secret: Vec<u8>, iters: usize) -> HiddenData {
  * Please note secret will be erased at the end of this function, so that it is hard to forget
  * cleaning it up.
  */
-pub fn recover(mut data: HiddenData, secret: Vec<u8>) -> Vec<u8> {
+pub fn recover(mut data: HiddenData, secret: Vec<u8>) -> Result<Vec<u8>, Error> {
     // Decrypt random keys one by one
-    let mut key = derive_key_salt(secret, data.salt);
+    let mut key = derive_key_salt(secret, data.salt)?;
     while let Some(data) = data.blocks.pop() {
-        key = decrypt(data, key);
+        key = decrypt(data, key)?;
     }
     // Here, key is the last "key", ie. the stored data
 
     // Return
-    key
+    Ok(key)
 }
 
 
@@ -193,6 +205,6 @@ mod tests {
         let secret2 = secret1.clone();
         let data1 = vec![4, 5, 6, 6];
         let data2 = data1.clone();
-        assert_eq!(*recover(hide(data1, secret1, 100000), secret2), *data2);
+        assert_eq!(*recover(hide(data1, secret1, 100000).unwrap(), secret2).unwrap(), *data2);
     }
 }
