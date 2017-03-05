@@ -18,6 +18,7 @@ pub struct HiddenData {
     hidden_data: Vec<u8>, // TODO: remove this (that was put only to make tests pass)
 }
 
+#[derive(Debug)]
 struct EncryptedBlock {
     iv: [u8; IV_SIZE],
     data: Vec<u8>,
@@ -29,6 +30,7 @@ struct EncryptedBlock {
  * data and key will be erased at the end of the function
  */
 fn encrypt_and_destroy_key(mut data: Vec<u8>, mut key: Vec<u8>) -> EncryptedBlock {
+    println!("Encrypting:\n  Input:\n    Content: {:?}\n    Key: {:?}", data, key);
     let mut iv = [0; IV_SIZE];
     openssl::rand::rand_bytes(&mut iv).unwrap();
 
@@ -44,6 +46,7 @@ fn encrypt_and_destroy_key(mut data: Vec<u8>, mut key: Vec<u8>) -> EncryptedBloc
     }
 
     // Return
+    println!("  Result:\n    Iv: {:?},\n    Data: {:?}", iv, enc);
     EncryptedBlock { iv: iv, data: enc.unwrap() }
 }
 
@@ -63,14 +66,26 @@ fn encrypt_and_destroy(data: Vec<u8>) -> (Vec<u8>, EncryptedBlock) {
 }
 
 /**
- * Derives a key from a secret, and returns a couple (salt, key)
+ * Decrypts encrypted block data with the key key
+ *
+ * The key will be erased at the end of the function
+ */
+fn decrypt(data: EncryptedBlock, mut key: Vec<u8>) -> Vec<u8> {
+    println!("Decrypting:\n  Input:\n    Iv: {:?}\n    Data: {:?}\n    Key: {:?}", data.iv, data.data, key);
+    let res = openssl::symm::decrypt(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&data.iv), &data.data);
+    println!("  Result: {:?}", res);
+    for x in key.iter_mut() {
+        *x = 0;
+    }
+    res.unwrap()
+}
+
+/**
+ * Derives a key from a secret and a salt
  *
  * The secret will be erased at the end of the function
  */
-fn derive_key(secret: &mut [u8]) -> (Vec<u8>, Vec<u8>) {
-    let mut salt = vec![0; SALT_SIZE];
-    openssl::rand::rand_bytes(&mut salt).unwrap();
-
+fn derive_key_salt(secret: &mut [u8], salt: Vec<u8>) -> Vec<u8> {
     // Generate key
     let mut key = vec![0; KEY_SIZE];
     openssl::pkcs5::pbkdf2_hmac(&secret, &salt, PBKDF_ITERS, /* HASH */ MessageDigest::sha256(), &mut key).unwrap();
@@ -81,7 +96,22 @@ fn derive_key(secret: &mut [u8]) -> (Vec<u8>, Vec<u8>) {
     }
 
     // Return
-    (salt, key)
+    key
+}
+
+/**
+ * Derives a key from a secret, and returns a couple (salt, key)
+ *
+ * The secret will be erased at the end of the function
+ */
+fn derive_key(secret: &mut [u8]) -> (Vec<u8>, Vec<u8>) {
+    // Generate parameters
+    let mut salt = vec![0; SALT_SIZE];
+    openssl::rand::rand_bytes(&mut salt).unwrap();
+    let saltret = salt.clone();
+
+    // Return
+    (saltret, derive_key_salt(secret, salt))
 }
 
 /**
@@ -90,7 +120,7 @@ fn derive_key(secret: &mut [u8]) -> (Vec<u8>, Vec<u8>) {
  * Please note both data and secret will be erased at the end of this function, so that it is hard
  * to forget cleaning them up.
  */
-pub fn hide(mut data: Vec<u8>, secret: &mut [u8]) -> HiddenData {
+pub fn hide(data: Vec<u8>, secret: &mut [u8]) -> HiddenData {
     let mut blocks = Vec::new();
 
     // TODO: remove
@@ -102,7 +132,7 @@ pub fn hide(mut data: Vec<u8>, secret: &mut [u8]) -> HiddenData {
 
     // Encrypt key with random key a number of times
     let mut oldkey = key;
-    for _ in 0..1000 { // TODO: make this parameterized
+    for _ in 0..2 { // TODO: make this parameterized
         let (key, block) = encrypt_and_destroy(oldkey);
         blocks.push(block);
         oldkey = key;
@@ -126,12 +156,16 @@ pub fn hide(mut data: Vec<u8>, secret: &mut [u8]) -> HiddenData {
  * Please note secret will be erased at the end of this function, so that it is hard to forget
  * cleaning it up.
  */
-pub fn recover(data: HiddenData, secret: &mut [u8]) -> Vec<u8> {
-    // TODO
-    // Erase secret
-    // TODO
+pub fn recover(mut data: HiddenData, secret: &mut [u8]) -> Vec<u8> {
+    // Decrypt random keys one by one
+    let mut key = derive_key_salt(secret, data.salt);
+    while let Some(data) = data.blocks.pop() {
+        key = decrypt(data, key);
+    }
+    // Here, key is the last "key", ie. the stored data
+
     // Return
-    data.hidden_data
+    key
 }
 
 
