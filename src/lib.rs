@@ -25,11 +25,21 @@ struct EncryptedBlock {
 }
 
 /**
+ * Cleans up an array
+ */
+fn cleanup(mut data: Vec<u8>) {
+    for x in data.iter_mut() {
+        let y = x as *mut u8;
+        unsafe { std::ptr::write_volatile(y, 0) }
+    }
+}
+
+/**
  * Encrypts data with key returns a block that can be decrypted with the key
  *
  * data and key will be erased at the end of the function
  */
-fn encrypt_and_destroy_key(mut data: Vec<u8>, mut key: Vec<u8>) -> EncryptedBlock {
+fn encrypt_and_destroy_key(data: Vec<u8>, key: Vec<u8>) -> EncryptedBlock {
     println!("Encrypting:\n  Input:\n    Content: {:?}\n    Key: {:?}", data, key);
     let mut iv = [0; IV_SIZE];
     openssl::rand::rand_bytes(&mut iv).unwrap();
@@ -38,12 +48,8 @@ fn encrypt_and_destroy_key(mut data: Vec<u8>, mut key: Vec<u8>) -> EncryptedBloc
     let enc = openssl::symm::encrypt(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&iv), &data);
 
     // Clean up
-    for x in data.iter_mut() {
-        *x = 0;
-    }
-    for x in key.iter_mut() {
-        *x = 0;
-    }
+    cleanup(data);
+    cleanup(key);
 
     // Return
     println!("  Result:\n    Iv: {:?},\n    Data: {:?}", iv, enc);
@@ -70,13 +76,12 @@ fn encrypt_and_destroy(data: Vec<u8>) -> (Vec<u8>, EncryptedBlock) {
  *
  * The key will be erased at the end of the function
  */
-fn decrypt(data: EncryptedBlock, mut key: Vec<u8>) -> Vec<u8> {
+fn decrypt(data: EncryptedBlock, key: Vec<u8>) -> Vec<u8> {
     println!("Decrypting:\n  Input:\n    Iv: {:?}\n    Data: {:?}\n    Key: {:?}", data.iv, data.data, key);
     let res = openssl::symm::decrypt(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&data.iv), &data.data);
     println!("  Result: {:?}", res);
-    for x in key.iter_mut() {
-        *x = 0;
-    }
+    cleanup(key);
+    cleanup(data.data);
     res.unwrap()
 }
 
@@ -85,15 +90,13 @@ fn decrypt(data: EncryptedBlock, mut key: Vec<u8>) -> Vec<u8> {
  *
  * The secret will be erased at the end of the function
  */
-fn derive_key_salt(secret: &mut [u8], salt: Vec<u8>) -> Vec<u8> {
+fn derive_key_salt(secret: Vec<u8>, salt: Vec<u8>) -> Vec<u8> {
     // Generate key
     let mut key = vec![0; KEY_SIZE];
     openssl::pkcs5::pbkdf2_hmac(&secret, &salt, PBKDF_ITERS, /* HASH */ MessageDigest::sha256(), &mut key).unwrap();
 
     // Clean up
-    for x in secret.iter_mut() {
-        *x = 0;
-    }
+    cleanup(secret);
 
     // Return
     key
@@ -104,7 +107,7 @@ fn derive_key_salt(secret: &mut [u8], salt: Vec<u8>) -> Vec<u8> {
  *
  * The secret will be erased at the end of the function
  */
-fn derive_key(secret: &mut [u8]) -> (Vec<u8>, Vec<u8>) {
+fn derive_key(secret: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
     // Generate parameters
     let mut salt = vec![0; SALT_SIZE];
     openssl::rand::rand_bytes(&mut salt).unwrap();
@@ -120,7 +123,7 @@ fn derive_key(secret: &mut [u8]) -> (Vec<u8>, Vec<u8>) {
  * Please note both data and secret will be erased at the end of this function, so that it is hard
  * to forget cleaning them up.
  */
-pub fn hide(data: Vec<u8>, secret: &mut [u8]) -> HiddenData {
+pub fn hide(data: Vec<u8>, secret: Vec<u8>) -> HiddenData {
     let mut blocks = Vec::new();
 
     // TODO: remove
@@ -156,7 +159,7 @@ pub fn hide(data: Vec<u8>, secret: &mut [u8]) -> HiddenData {
  * Please note secret will be erased at the end of this function, so that it is hard to forget
  * cleaning it up.
  */
-pub fn recover(mut data: HiddenData, secret: &mut [u8]) -> Vec<u8> {
+pub fn recover(mut data: HiddenData, secret: Vec<u8>) -> Vec<u8> {
     // Decrypt random keys one by one
     let mut key = derive_key_salt(secret, data.salt);
     while let Some(data) = data.blocks.pop() {
@@ -175,10 +178,10 @@ mod tests {
 
     #[test]
     fn it_works() {
-        let mut secret1 = [0, 1, 2, 3];
-        let mut secret2 = secret1.clone();
+        let secret1 = vec![0, 1, 2, 3];
+        let secret2 = secret1.clone();
         let data1 = vec![4, 5, 6, 6];
         let data2 = data1.clone();
-        assert_eq!(*recover(hide(data1, &mut secret1), &mut secret2), *data2);
+        assert_eq!(*recover(hide(data1, secret1), secret2), *data2);
     }
 }
