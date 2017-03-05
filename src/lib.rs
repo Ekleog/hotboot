@@ -11,6 +11,7 @@ const PBKDF_ITERS: usize = 10000;
 // const CIPHER: Cipher = Cipher::aes_256_gcm();
 const KEY_SIZE: usize = 256 / 8;
 const IV_SIZE: usize = KEY_SIZE;
+const TAG_SIZE: usize = 16;
 
 pub struct HiddenData {
     salt: Vec<u8>,
@@ -21,6 +22,7 @@ pub struct HiddenData {
 #[derive(Debug)]
 struct EncryptedBlock {
     iv: [u8; IV_SIZE],
+    tag: [u8; TAG_SIZE],
     data: Vec<u8>,
 }
 
@@ -40,20 +42,19 @@ fn cleanup(mut data: Vec<u8>) {
  * data and key will be erased at the end of the function
  */
 fn encrypt_and_destroy_key(data: Vec<u8>, key: Vec<u8>) -> EncryptedBlock {
-    println!("Encrypting:\n  Input:\n    Content: {:?}\n    Key: {:?}", data, key);
     let mut iv = [0; IV_SIZE];
     openssl::rand::rand_bytes(&mut iv).unwrap();
+    let mut tag = [0; TAG_SIZE];
 
     // Encrypt
-    let enc = openssl::symm::encrypt(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&iv), &data);
+    let enc = openssl::symm::encrypt_aead(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&iv), &[], &data, &mut tag);
 
     // Clean up
     cleanup(data);
     cleanup(key);
 
     // Return
-    println!("  Result:\n    Iv: {:?},\n    Data: {:?}", iv, enc);
-    EncryptedBlock { iv: iv, data: enc.unwrap() }
+    EncryptedBlock { iv: iv, tag: tag, data: enc.unwrap() }
 }
 
 /**
@@ -77,9 +78,7 @@ fn encrypt_and_destroy(data: Vec<u8>) -> (Vec<u8>, EncryptedBlock) {
  * The key will be erased at the end of the function
  */
 fn decrypt(data: EncryptedBlock, key: Vec<u8>) -> Vec<u8> {
-    println!("Decrypting:\n  Input:\n    Iv: {:?}\n    Data: {:?}\n    Key: {:?}", data.iv, data.data, key);
-    let res = openssl::symm::decrypt(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&data.iv), &data.data);
-    println!("  Result: {:?}", res);
+    let res = openssl::symm::decrypt_aead(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&data.iv), &[], &data.data, &data.tag);
     cleanup(key);
     cleanup(data.data);
     res.unwrap()
