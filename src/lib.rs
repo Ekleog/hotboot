@@ -8,21 +8,18 @@ use openssl::symm::Cipher;
 const SALT_SIZE: usize = 32;
 const PBKDF_ITERS: usize = 10000;
 // const HASH: MessageDigest = MessageDigest::sha256();
-// const CIPHER: Cipher = Cipher::aes_256_gcm();
+// const CIPHER: Cipher = Cipher::aes_256_ctr();
 const KEY_SIZE: usize = 256 / 8;
-const IV_SIZE: usize = KEY_SIZE;
-const TAG_SIZE: usize = 16;
+const IV_SIZE: usize = 16;
 
 pub struct HiddenData {
     salt: Vec<u8>,
     blocks: Vec<EncryptedBlock>,
-    hidden_data: Vec<u8>, // TODO: remove this (that was put only to make tests pass)
 }
 
 #[derive(Debug)]
 struct EncryptedBlock {
     iv: [u8; IV_SIZE],
-    tag: [u8; TAG_SIZE],
     data: Vec<u8>,
 }
 
@@ -44,17 +41,16 @@ fn cleanup(mut data: Vec<u8>) {
 fn encrypt_and_destroy_key(data: Vec<u8>, key: Vec<u8>) -> EncryptedBlock {
     let mut iv = [0; IV_SIZE];
     openssl::rand::rand_bytes(&mut iv).unwrap();
-    let mut tag = [0; TAG_SIZE];
 
     // Encrypt
-    let enc = openssl::symm::encrypt_aead(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&iv), &[], &data, &mut tag);
+    let enc = openssl::symm::encrypt(/* CIPHER */ Cipher::aes_256_ctr(), &key, Some(&iv), &data);
 
     // Clean up
     cleanup(data);
     cleanup(key);
 
     // Return
-    EncryptedBlock { iv: iv, tag: tag, data: enc.unwrap() }
+    EncryptedBlock { iv: iv, data: enc.unwrap() }
 }
 
 /**
@@ -78,7 +74,7 @@ fn encrypt_and_destroy(data: Vec<u8>) -> (Vec<u8>, EncryptedBlock) {
  * The key will be erased at the end of the function
  */
 fn decrypt(data: EncryptedBlock, key: Vec<u8>) -> Vec<u8> {
-    let res = openssl::symm::decrypt_aead(/* CIPHER */ Cipher::aes_256_gcm(), &key, Some(&data.iv), &[], &data.data, &data.tag);
+    let res = openssl::symm::decrypt(/* CIPHER */ Cipher::aes_256_ctr(), &key, Some(&data.iv), &data.data);
     cleanup(key);
     cleanup(data.data);
     res.unwrap()
@@ -125,9 +121,6 @@ fn derive_key(secret: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
 pub fn hide(data: Vec<u8>, secret: Vec<u8>) -> HiddenData {
     let mut blocks = Vec::new();
 
-    // TODO: remove
-    let hidden_data = data.clone();
-
     // Encrypt data with random key
     let (key, block) = encrypt_and_destroy(data);
     blocks.push(block);
@@ -148,7 +141,6 @@ pub fn hide(data: Vec<u8>, secret: Vec<u8>) -> HiddenData {
     HiddenData {
         salt: salt,
         blocks: blocks,
-        hidden_data: hidden_data,
     }
 }
 
