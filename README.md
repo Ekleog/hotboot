@@ -66,7 +66,7 @@ issue](https://github.com/Ekleog/hotboot/issues/new).
 History
 -------
 
- * 2017-03-05: Project launch
+ * 2017-03-04: Project launch
 
 
 License
