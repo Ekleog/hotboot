@@ -30,9 +30,9 @@ The threat model is that of a physical attacker who attacks a
 weak-secret-protected data using a cold boot attack.
 
 The special use case this was designed for is screenlockers: the screen
-unlocking password may not be strong, but there is timing delays that prohibit
-brute-force. The use of hotboot to protect the secure data in memory with the
-unlocking password allows to also be secure against a cold boot attack.
+unlocking password may not be strong, but there are timing delays that make
+brute-force impractical. The use of hotboot to protect the secure data in memory
+with the unlocking password allows to also be secure against a cold boot attack.
 
 
 Design
