@@ -13,7 +13,7 @@ documentation = "https://docs.rs/hotboot"
 repository = "https://github.com/Ekleog/hotboot"
 
 readme = "README.md"
-keywords = [ "crypto", "cold boot" ]
+keywords = [ "crypto", "cold", "boot" ]
 categories = [ "cryptography" ]
 
 
