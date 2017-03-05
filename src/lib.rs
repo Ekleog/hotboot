@@ -127,7 +127,7 @@ pub fn hide(data: Vec<u8>, secret: Vec<u8>) -> HiddenData {
 
     // Encrypt key with random key a number of times
     let mut oldkey = key;
-    for _ in 0..2 { // TODO: make this parameterized
+    for _ in 0..100000 { // TODO: make this parameterized
         let (key, block) = encrypt_and_destroy(oldkey);
         blocks.push(block);
         oldkey = key;
