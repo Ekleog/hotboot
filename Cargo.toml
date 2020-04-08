@@ -19,7 +19,7 @@ categories = [ "cryptography" ]
 
 [dependencies]
 
-openssl = "0.9.7"
+openssl = "0.10.29"
 
 
 [badges]
